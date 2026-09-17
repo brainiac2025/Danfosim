@@ -47,6 +47,21 @@ the sensitivity sweeps in §9b, not a validated point estimate.
   — plausible values for a load-threshold departure rule; swept across a
   range in §9b rather than treated as fixed truths.
 - **`deviation_prob = 0.15`** — see above; swept in §9b.
+- **Ambient (background, non-transit) road traffic** (`network.py`:
+  `Network.ambient_density`) adds a time-varying background vehicle-density
+  term to every edge's congestion calculation, higher at bottleneck edges and
+  higher at rush hour. This was added after discovering that the simulated
+  transit fleet alone (tens of vehicles across dozens of edges) is far too
+  sparse to ever load a bridge/CBD-adjacent edge up to a level where the BPR
+  congestion term activates — a real limitation of any model that only
+  represents transit vehicles explicitly, since actual Lagos bridge
+  congestion comes overwhelmingly from general (car/truck) traffic, not
+  danfo/keke density. `ambient_traffic_base`, `_bottleneck_multiplier`, and
+  `_peak_multiplier` (§11 Config) are assumptions tuned by hand to produce a
+  congestion response that is clearly present and clearly rush-hour-linked
+  without degenerating into gridlock at the default congestion multiplier —
+  not measured background-traffic volumes. The §9b.2 congestion-severity
+  sweep (`scripts/run_sensitivity.py congestion`) scales this same term.
 - **Distance-from-CBD demand gradient** (`demand.py`: outer stops scale
   `0.5 + 0.5 * hops/(J-1)` relative to CBD-adjacent stops) — a monotonic
   "more suburban population commutes in" assumption, not derived from a

@@ -61,6 +61,7 @@ def step_formal(
     net: Network,
     cfg: Config,
     gen: torch.Generator,
+    t_hours: float,
 ) -> tuple[VehicleState, torch.Tensor, torch.Tensor]:
     """Advance the formal fleet and passenger queues by one step.
     Returns (new_state, new_queue, boarded_count_per_batch)."""
@@ -69,7 +70,7 @@ def step_formal(
     waiting_mask = state.state == WAITING
     enroute_mask = state.state == EN_ROUTE
 
-    density = compute_density(state, net, enroute_mask)
+    density = compute_density(state, net, enroute_mask, cfg, t_hours)
 
     queue, boarded_count = board_waiting_vehicles(state, queue, net, waiting_mask, cfg.hard_capacity)
 

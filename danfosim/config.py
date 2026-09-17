@@ -11,6 +11,12 @@ class Config:
     n_corridors: int = 6
     n_junctions_per_corridor: int = 8
     bottleneck_edges_frac: float = 0.15
+    # background (non-transit) road traffic contributing to edge congestion,
+    # since a Lagos bridge's chronic congestion comes overwhelmingly from
+    # general traffic, not the small simulated transit fleet's own density
+    ambient_traffic_base: float = 1.5  # vehicle-equivalent density, off-peak, non-bottleneck edge
+    ambient_traffic_bottleneck_multiplier: float = 3.0  # bottleneck edges carry more background traffic
+    ambient_traffic_peak_multiplier: float = 2.0  # background traffic also rises at rush hour
 
     # demand (§4)
     base_arrival_rate: float = 0.35  # passengers/minute at an average off-peak stop

@@ -43,6 +43,7 @@ def test_formal_bus_wait_time_roughly_bounded_by_half_headway_in_steady_state():
     cfg = Config(
         n_days=20, sim_hours=6.0, fleet_size=30, n_corridors=2, n_junctions_per_corridor=4,
         headway_minutes=10.0, hard_capacity=30.0, base_arrival_rate=0.3, peak_multiplier=1.0,
+        ambient_traffic_base=0.0,  # isolate the headway/queueing mechanic from congestion effects
     )
     net = _net(cfg)
     sim_state, metrics = run_day(cfg, net, "formal", torch.device("cpu"))

@@ -60,7 +60,7 @@ def step(sim_state: SimState) -> tuple[SimState, torch.Tensor]:
     sim_state.queue = sim_state.queue + arrivals
 
     step_fn = vehicle.step_informal if sim_state.regime == "informal" else formal_baseline.step_formal
-    fleet, queue, boarded = step_fn(sim_state.fleet, sim_state.queue, net, cfg, sim_state.gen)
+    fleet, queue, boarded = step_fn(sim_state.fleet, sim_state.queue, net, cfg, sim_state.gen, sim_state.t_hours)
 
     sim_state.fleet = fleet
     sim_state.queue = queue

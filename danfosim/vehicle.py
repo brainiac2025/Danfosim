@@ -90,14 +90,15 @@ def leg_destination_j(direction: torch.Tensor, n_junctions: int) -> torch.Tensor
     return torch.where(direction == INBOUND, torch.full_like(direction, n_junctions - 1), torch.zeros_like(direction))
 
 
-def compute_density(state: VehicleState, net: Network, enroute_mask: torch.Tensor) -> torch.Tensor:
-    """Vehicle count per edge, per batch row. Shape [B, E]."""
+def compute_density(state: VehicleState, net: Network, enroute_mask: torch.Tensor, cfg: Config, t_hours: float) -> torch.Tensor:
+    """Vehicle count per edge, per batch row, plus a time-varying background
+    (non-transit) traffic term (see `Network.ambient_density`). Shape [B, E]."""
     B = state.batch_size
     edge_idx = net.edge_for_leg(state.corridor, state.cur_j, state.direction)
     ones = torch.where(enroute_mask, torch.ones_like(edge_idx, dtype=torch.float), torch.zeros(1, device=edge_idx.device))
     density = torch.zeros(B, net.n_edges, device=edge_idx.device)
     density.scatter_add_(1, edge_idx, ones)
-    return density
+    return density + net.ambient_density(cfg, t_hours).unsqueeze(0)
 
 
 def board_at_positions(
@@ -157,11 +158,12 @@ def board_and_prepare(
     cfg: Config,
     enroute_mask: torch.Tensor,
     waiting_mask: torch.Tensor,
+    t_hours: float,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Shared first half of an informal-regime step: compute edge density,
     board waiting vehicles at their current stop, and accrue wait time.
     Returns (new_queue, boarded_count_per_batch, density)."""
-    density = compute_density(state, net, enroute_mask)
+    density = compute_density(state, net, enroute_mask, cfg, t_hours)
     max_capacity = cfg.nominal_capacity * cfg.soft_capacity_overload
     queue, boarded_count = board_waiting_vehicles(state, queue, net, waiting_mask, max_capacity)
     state.wait_time = torch.where(waiting_mask, state.wait_time + cfg.step_minutes, state.wait_time)
@@ -248,6 +250,7 @@ def step_informal(
     net: Network,
     cfg: Config,
     gen: torch.Generator,
+    t_hours: float,
 ) -> tuple[VehicleState, torch.Tensor, torch.Tensor]:
     """Advance the informal fleet and passenger queues by one step, using the
     fixed load-threshold departure rule (§5). Returns (new_state, new_queue,
@@ -255,7 +258,7 @@ def step_informal(
     waiting_mask = state.state == WAITING
     enroute_mask = state.state == EN_ROUTE
 
-    queue, boarded_count, density = board_and_prepare(state, queue, net, cfg, enroute_mask, waiting_mask)
+    queue, boarded_count, density = board_and_prepare(state, queue, net, cfg, enroute_mask, waiting_mask, t_hours)
 
     load_frac = state.onboard / cfg.nominal_capacity
     depart_now = waiting_mask & (

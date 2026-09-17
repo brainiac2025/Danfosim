@@ -76,7 +76,7 @@ def step_learned(
     waiting_mask = state.state == WAITING
     enroute_mask = state.state == EN_ROUTE
 
-    queue, boarded_count, density = board_and_prepare(state, queue, net, cfg, enroute_mask, waiting_mask)
+    queue, boarded_count, density = board_and_prepare(state, queue, net, cfg, enroute_mask, waiting_mask, t_hours)
 
     features = make_features(state, queue, net, cfg, t_hours)
     logits = policy(features)

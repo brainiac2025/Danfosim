@@ -12,6 +12,7 @@ segments) are the ones flagged as bottlenecks with a steeper congestion curve.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import networkx as nx
@@ -20,6 +21,10 @@ import torch
 from .config import Config
 
 BPR_POWER = 4.0  # standard Bureau of Public Roads congestion-function exponent
+
+
+def _gaussian(t: float, peak: float, width: float) -> float:
+    return math.exp(-0.5 * ((t - peak) / width) ** 2)
 
 
 @dataclass
@@ -49,6 +54,25 @@ class Network:
         e_local = torch.where(direction == 0, local_j, local_j - 1)
         return corridor * epc + e_local
 
+    def scale_congestion(self, factor: float) -> "Network":
+        """Return a copy with every edge's congestion sensitivity scaled by
+        `factor` — used by the §9b.2 congestion-severity sweep to ask how
+        much of informal transit's advantage (or disadvantage) survives as
+        bottleneck congestion is made more or less severe."""
+        return Network(
+            n_corridors=self.n_corridors,
+            n_junctions=self.n_junctions,
+            n_nodes=self.n_nodes,
+            n_edges=self.n_edges,
+            cbd_node=self.cbd_node,
+            edge_from=self.edge_from,
+            edge_to=self.edge_to,
+            base_travel_time=self.base_travel_time,
+            congestion_sensitivity=self.congestion_sensitivity * factor,
+            capacity=self.capacity,
+            is_bottleneck=self.is_bottleneck,
+        )
+
     def to(self, device: torch.device) -> "Network":
         return Network(
             n_corridors=self.n_corridors,
@@ -63,6 +87,27 @@ class Network:
             capacity=self.capacity.to(device),
             is_bottleneck=self.is_bottleneck.to(device),
         )
+
+    def ambient_density(self, cfg: Config, t_hours: float) -> torch.Tensor:
+        """Background (non-transit) road traffic per edge, shape [E]. The
+        simulated transit fleet is far too small (tens of vehicles across
+        dozens of edges) to ever load a bridge/CBD-adjacent edge up to a
+        realistic congestion level by itself — real Lagos bottlenecks are
+        congested by general traffic. This adds an exogenous, time-varying
+        background density (higher at bottleneck edges, higher at rush
+        hour) so the congestion function actually responds to time-of-day
+        and to the §9b.2 congestion-severity sweep."""
+        rush = max(
+            _gaussian(t_hours, cfg.morning_peak_hour, cfg.peak_width_hours),
+            _gaussian(t_hours, cfg.evening_peak_hour, cfg.peak_width_hours),
+        )
+        base = torch.where(
+            self.is_bottleneck,
+            torch.full_like(self.capacity, cfg.ambient_traffic_base * cfg.ambient_traffic_bottleneck_multiplier),
+            torch.full_like(self.capacity, cfg.ambient_traffic_base),
+        )
+        peak_component = 1.0 + (cfg.ambient_traffic_peak_multiplier - 1.0) * rush
+        return base * peak_component
 
     def travel_time(self, edge_idx: torch.Tensor, density: torch.Tensor) -> torch.Tensor:
         """BPR-style congestion function: t = t0 * (1 + alpha * (density/capacity)^4).

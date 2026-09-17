@@ -31,7 +31,7 @@ def test_vehicle_departs_once_threshold_met_with_no_max_wait_cap():
     queue = torch.zeros(1, n_demand_stops(net), device=device)
     # force a big queue at the vehicle's stop so it fills past threshold immediately
     queue[0, 0] = 100.0
-    state, queue, boarded = step_informal(state, queue, net, cfg, gen)
+    state, queue, boarded = step_informal(state, queue, net, cfg, gen, cfg.day_start_hour)
     assert state.state[0, 0].item() == EN_ROUTE
     assert state.onboard[0, 0].item() > 0.0  # boarded passengers stay onboard once en route
     assert state.onboard[0, 0].item() == boarded[0].item()
@@ -43,7 +43,7 @@ def test_vehicle_departs_on_max_wait_even_with_no_passengers():
     state = init_fleet(net, cfg, batch_size=1, fleet_size=1, device=device)
     queue = torch.zeros(1, n_demand_stops(net), device=device)
     for _ in range(2):
-        state, queue, boarded = step_informal(state, queue, net, cfg, gen)
+        state, queue, boarded = step_informal(state, queue, net, cfg, gen, cfg.day_start_hour)
     assert state.state[0, 0].item() == EN_ROUTE
 
 
@@ -57,7 +57,7 @@ def test_boarding_never_creates_or_destroys_passengers():
         arrivals = sample_arrivals(net, cfg, t_hours, batch_size=4, gen=gen, device=device)
         queue = queue + arrivals
         total_arrived += arrivals.sum(dim=1)
-        state, queue, boarded = step_informal(state, queue, net, cfg, gen)
+        state, queue, boarded = step_informal(state, queue, net, cfg, gen, cfg.day_start_hour)
     still_onboard = state.onboard.sum(dim=1)
     still_queued = queue.sum(dim=1)
     completed_or_dropped = state.trips_completed.sum(dim=1)  # each trip carried >=0 passengers, not a count check
@@ -77,7 +77,7 @@ def test_soft_overload_allows_exceeding_nominal_capacity():
     state = init_fleet(net, cfg, batch_size=1, fleet_size=1, device=device)
     queue = torch.zeros(1, n_demand_stops(net), device=device)
     queue[0, 0] = 1000.0
-    state, queue, boarded = step_informal(state, queue, net, cfg, gen)
+    state, queue, boarded = step_informal(state, queue, net, cfg, gen, cfg.day_start_hour)
     assert state.onboard[0, 0].item() == boarded[0].item()  # boarded passengers stay onboard once en route
     assert queue[0, 0].item() == 1000.0 - boarded[0].item()
     assert boarded[0].item() <= cfg.nominal_capacity * cfg.soft_capacity_overload + 1e-6
@@ -94,7 +94,7 @@ def test_multiple_vehicles_sharing_a_stop_do_not_double_book_passengers():
     state.corridor[:] = 0
     queue = torch.zeros(1, n_demand_stops(net), device=device)
     queue[0, 0] = 8.0  # less than combined room (20) but more than one vehicle's capacity
-    state, queue, boarded = step_informal(state, queue, net, cfg, gen)
+    state, queue, boarded = step_informal(state, queue, net, cfg, gen, cfg.day_start_hour)
     assert boarded[0].item() == 8.0
     assert queue[0, 0].item() == 0.0
     assert state.onboard.sum().item() == 8.0
@@ -115,7 +115,7 @@ def test_informal_rolling_pickup_serves_intermediate_junction_demand():
     # a passenger waiting at junction 1 (intermediate, not the vehicle's origin)
     queue[0, 1] = 5.0
     for _ in range(30):
-        state, queue, boarded = step_informal(state, queue, net, cfg, gen)
+        state, queue, boarded = step_informal(state, queue, net, cfg, gen, cfg.day_start_hour)
         if state.onboard.sum().item() > 0:
             break
     assert state.onboard.sum().item() == 5.0
@@ -128,7 +128,7 @@ def test_formal_fleet_departs_at_headway_regardless_of_load():
     queue = torch.zeros(1, n_demand_stops(net), device=device)  # no passengers ever
     departed_any = False
     for _ in range(10):
-        state, queue, boarded = formal_baseline.step_formal(state, queue, net, cfg, gen)
+        state, queue, boarded = formal_baseline.step_formal(state, queue, net, cfg, gen, cfg.day_start_hour)
         if (state.state == EN_ROUTE).any():
             departed_any = True
     assert departed_any
@@ -139,6 +139,6 @@ def test_formal_fleet_hard_capacity_leaves_excess_queued():
     state = formal_baseline.init_fleet(net, cfg, batch_size=1, fleet_size=1, device=device)
     queue = torch.zeros(1, n_demand_stops(net), device=device)
     queue[0, 0] = 100.0
-    state, queue, boarded = formal_baseline.step_formal(state, queue, net, cfg, gen)
+    state, queue, boarded = formal_baseline.step_formal(state, queue, net, cfg, gen, cfg.day_start_hour)
     assert boarded[0].item() == 10.0
     assert queue[0, 0].item() == 90.0
