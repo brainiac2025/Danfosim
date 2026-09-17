@@ -15,12 +15,14 @@ import torch
 
 from danfosim.config import Config
 from danfosim.network import generate_network
-from danfosim.sim import run_day, summarize
+from danfosim.sim import run_day, summarize, summarize_with_ci
 
 
-def print_row(label: str, summary) -> None:
+def print_row(label: str, summary, ci) -> None:
+    wait_ci = ci["wait"]
     print(
-        f"  {label:<12} wait={summary.mean_wait_time_minutes:7.2f} min  "
+        f"  {label:<12} wait={summary.mean_wait_time_minutes:7.2f} min "
+        f"[95% CI {wait_ci.ci95_low:6.2f}, {wait_ci.ci95_high:6.2f}, n={wait_ci.n:3d} days]  "
         f"travel={summary.mean_travel_time_minutes:7.2f} min  "
         f"util={summary.mean_utilisation:5.2f}  trips={summary.throughput_trips:8.0f}"
     )
@@ -56,24 +58,23 @@ def main():
     for regime in ("informal", "formal"):
         _, metrics = run_day(cfg, net, regime, device)
 
-        overall = summarize(metrics, cfg)
-        morning_peak = summarize(metrics, cfg, t_start=morning_lo, t_end=morning_hi)
-        evening_peak = summarize(metrics, cfg, t_start=evening_lo, t_end=evening_hi)
-        off_peak = summarize(metrics, cfg, t_start=offpeak_lo, t_end=offpeak_hi) if offpeak_hi > offpeak_lo else None
+        windows = {
+            "overall": (None, None),
+            "morning_peak": (morning_lo, morning_hi),
+            "evening_peak": (evening_lo, evening_hi),
+        }
+        if offpeak_hi > offpeak_lo:
+            windows["off_peak"] = (offpeak_lo, offpeak_hi)
 
         print(f"\n=== {regime} ===")
-        print_row("overall", overall)
-        print_row("morning peak", morning_peak)
-        print_row("evening peak", evening_peak)
-        if off_peak is not None:
-            print_row("off-peak", off_peak)
+        bucket_results = {}
+        for label, (t_start, t_end) in windows.items():
+            summary = summarize(metrics, cfg, t_start=t_start, t_end=t_end)
+            ci = summarize_with_ci(metrics, cfg, t_start=t_start, t_end=t_end)
+            print_row(label.replace("_", " "), summary, ci)
+            bucket_results[label] = {**asdict(summary), "wait_time_ci95": [ci["wait"].ci95_low, ci["wait"].ci95_high], "wait_time_n_days": ci["wait"].n}
 
-        results[regime] = {
-            "overall": asdict(overall),
-            "morning_peak": asdict(morning_peak),
-            "evening_peak": asdict(evening_peak),
-            "off_peak": asdict(off_peak) if off_peak is not None else None,
-        }
+        results[regime] = bucket_results
 
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)

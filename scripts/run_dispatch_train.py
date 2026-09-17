@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import torch
@@ -56,22 +57,35 @@ def train_policy(cfg: Config, net, device: torch.device, verbose: bool = True) -
 
 
 @torch.no_grad()
-def inter_departure_variance(cfg: Config, net, device: torch.device, policy: DispatchPolicy, fleet_size: int) -> float:
-    """Run the trained policy for one simulated day at the given fleet size
-    and report the variance of inter-departure gaps, pooled across all
-    corridors and batch days — the metric §9b.3 tracks vs. population size."""
-    cfg_run = Config(**{**vars(cfg), "fleet_size": fleet_size})
-    gen = resolve_generator(cfg_run, device, seed_offset=1)
-    fleet = init_fleet(net, cfg_run, cfg_run.n_days, fleet_size, device)
-    queue = torch.zeros(cfg_run.n_days, n_demand_stops(net), device=device)
-    t_hours = cfg_run.day_start_hour
+def inter_departure_variance(cfg: Config, net, device: torch.device, policy: DispatchPolicy) -> dict:
+    """Run the trained policy for one simulated day (at `cfg.fleet_size`,
+    the same size it was trained at) and report the variance of
+    inter-departure gaps — the metric §9b.3 tracks vs. population size.
 
-    last_departure_time = torch.full((cfg_run.n_days, fleet_size), float("nan"), device=device)
+    Returns a decomposition, not just the pooled number: pooling gaps across
+    every vehicle on every corridor conflates two different things — each
+    vehicle's own irregularity (within-corridor variance) and corridors
+    simply having different mean gaps (between-corridor variance). A pooled
+    number rising with fleet size could mean either "each operator got more
+    erratic" or "corridors just diverged in their average pace"; only the
+    decomposition tells you which. Also reports the mean gap and the
+    coefficient of variation (std/mean), since raw variance conflates
+    genuine irregularity with gaps simply being larger or smaller in scale.
+    """
+    fleet_size = cfg.fleet_size
+    gen = resolve_generator(cfg, device, seed_offset=1)
+    fleet = init_fleet(net, cfg, cfg.n_days, fleet_size, device)
+    queue = torch.zeros(cfg.n_days, n_demand_stops(net), device=device)
+    t_hours = cfg.day_start_hour
+
+    corridor_of_vehicle = fleet.corridor[0].clone()  # [fleet_size], constant over time
+    last_departure_time = torch.full((cfg.n_days, fleet_size), float("nan"), device=device)
     gaps: list[float] = []
+    gap_corridors: list[int] = []
 
-    for _ in range(cfg_run.n_steps):
+    for _ in range(cfg.n_steps):
         fleet, queue, boarded, depart_now, policy_depart, logprob, entropy, reward = step_learned(
-            fleet, queue, net, cfg_run, gen, policy, t_hours
+            fleet, queue, net, cfg, gen, policy, t_hours
         )
         # Record a gap (time since this vehicle's previous departure, of any
         # cause) only when the *current* departure was the policy's own
@@ -82,13 +96,38 @@ def inter_departure_variance(cfg: Config, net, device: torch.device, policy: Dis
             record = policy_depart & has_prev
             if record.any():
                 gaps.extend((t_hours - last_departure_time[record]).tolist())
+                vehicle_idx = record.nonzero(as_tuple=True)[1]
+                gap_corridors.extend(corridor_of_vehicle[vehicle_idx].tolist())
             last_departure_time = torch.where(depart_now, torch.full_like(last_departure_time, t_hours), last_departure_time)
-        t_hours += cfg_run.step_minutes / 60.0
+        t_hours += cfg.step_minutes / 60.0
 
     if len(gaps) < 2:
-        return float("nan")
+        return {"pooled_variance": float("nan"), "n_gaps": len(gaps)}
+
     gaps_t = torch.tensor(gaps)
-    return gaps_t.var(unbiased=True).item()
+    corridors_t = torch.tensor(gap_corridors)
+    pooled_variance = gaps_t.var(unbiased=True).item()
+    mean_gap = gaps_t.mean().item()
+
+    corridor_means, weighted_within_sum, weighted_within_n = [], 0.0, 0
+    for c in corridors_t.unique().tolist():
+        g = gaps_t[corridors_t == c]
+        corridor_means.append(g.mean().item())
+        if len(g) > 1:
+            weighted_within_sum += g.var(unbiased=True).item() * len(g)
+            weighted_within_n += len(g)
+    within_corridor_variance = weighted_within_sum / weighted_within_n if weighted_within_n > 0 else float("nan")
+    between_corridor_variance = torch.tensor(corridor_means).var(unbiased=False).item() if len(corridor_means) > 1 else float("nan")
+
+    return {
+        "pooled_variance": pooled_variance,
+        "within_corridor_variance": within_corridor_variance,
+        "between_corridor_variance": between_corridor_variance,
+        "mean_gap_hours": mean_gap,
+        "coefficient_of_variation": (pooled_variance ** 0.5) / mean_gap if mean_gap > 0 else float("nan"),
+        "n_gaps": len(gaps),
+        "n_corridors_observed": len(corridor_means),
+    }
 
 
 def main():
@@ -112,14 +151,26 @@ def main():
     gen_net = torch.Generator().manual_seed(cfg.seed)
     net = generate_network(cfg, gen_net)
 
-    print(f"Training dispatch policy for {cfg.policy_steps} steps on {device}...")
-    policy = train_policy(cfg, net, device)
-
+    # A separate policy is trained from scratch at each fleet size, so each
+    # reaches its own equilibrium under its own population of simultaneously
+    # optimizing agents — evaluating one policy (trained at a single fleet
+    # size) against other fleet sizes would test out-of-distribution
+    # generalisation, not the §9b.3 population-size convergence question.
     results = {}
     for fleet_size in args.fleet_sizes:
-        variance = inter_departure_variance(cfg, net, device, policy, fleet_size)
-        results[fleet_size] = variance
-        print(f"fleet_size={fleet_size:4d}  inter-departure variance (hours^2) = {variance:.4f}")
+        run_cfg = replace(cfg, fleet_size=fleet_size)
+        print(f"Training dispatch policy for {run_cfg.policy_steps} steps on {device}, fleet_size={fleet_size}...")
+        policy = train_policy(run_cfg, net, device, verbose=False)
+        diagnostics = inter_departure_variance(run_cfg, net, device, policy)
+        results[fleet_size] = diagnostics
+        print(
+            f"fleet_size={fleet_size:4d}  pooled_var={diagnostics['pooled_variance']:.4f}  "
+            f"within={diagnostics.get('within_corridor_variance', float('nan')):.4f}  "
+            f"between={diagnostics.get('between_corridor_variance', float('nan')):.4f}  "
+            f"mean_gap={diagnostics.get('mean_gap_hours', float('nan')):.3f}h  "
+            f"CV={diagnostics.get('coefficient_of_variation', float('nan')):.3f}  "
+            f"n_gaps={diagnostics['n_gaps']}"
+        )
 
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)

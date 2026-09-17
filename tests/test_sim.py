@@ -2,7 +2,7 @@ import torch
 
 from danfosim.config import Config
 from danfosim.network import generate_network
-from danfosim.sim import init_sim, run_day, step, summarize
+from danfosim.sim import init_sim, run_day, step, summarize, summarize_with_ci
 
 
 def _net(cfg):
@@ -61,6 +61,29 @@ def test_summarize_can_bucket_peak_vs_offpeak():
     offpeak = summarize(metrics, cfg, t_start=cfg.day_start_hour, t_end=cfg.day_start_hour + 1)
     assert peak.throughput_trips >= 0
     assert offpeak.throughput_trips >= 0
+
+
+def test_summarize_with_ci_matches_pooled_point_estimate_reasonably():
+    cfg = Config(n_days=50, sim_hours=4.0, fleet_size=15, n_corridors=3, n_junctions_per_corridor=5)
+    net = _net(cfg)
+    sim_state, metrics = run_day(cfg, net, "informal", torch.device("cpu"))
+    pooled = summarize(metrics, cfg)
+    ci = summarize_with_ci(metrics, cfg)
+    assert ci["wait"].n > 0
+    assert ci["wait"].ci95_low <= ci["wait"].mean <= ci["wait"].ci95_high
+    # the per-day mean and the pooled ratio should be in the same ballpark
+    assert abs(ci["wait"].mean - pooled.mean_wait_time_minutes) < pooled.mean_wait_time_minutes
+
+
+def test_summarize_with_ci_narrows_as_more_days_are_pooled():
+    cfg_small = Config(n_days=10, sim_hours=4.0, fleet_size=15, n_corridors=3, n_junctions_per_corridor=5)
+    cfg_large = Config(n_days=100, sim_hours=4.0, fleet_size=15, n_corridors=3, n_junctions_per_corridor=5)
+    net = _net(cfg_small)
+    _, metrics_small = run_day(cfg_small, net, "informal", torch.device("cpu"))
+    _, metrics_large = run_day(cfg_large, net, "informal", torch.device("cpu"))
+    ci_small = summarize_with_ci(metrics_small, cfg_small)
+    ci_large = summarize_with_ci(metrics_large, cfg_large)
+    assert ci_large["wait"].se <= ci_small["wait"].se
 
 
 def test_reproducible_given_same_seed():

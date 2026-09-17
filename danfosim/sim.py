@@ -156,3 +156,63 @@ def summarize(metrics: DayMetrics, cfg: Config, t_start: float | None = None, t_
         mean_utilisation=mean_utilisation,
         throughput_trips=total_trips,
     )
+
+
+@dataclass
+class ConfidenceInterval:
+    mean: float
+    std: float
+    se: float
+    ci95_low: float
+    ci95_high: float
+    n: int
+
+
+def _confidence_interval(values: torch.Tensor) -> ConfidenceInterval:
+    valid = values[~torch.isnan(values)]
+    n = valid.numel()
+    if n == 0:
+        nan = float("nan")
+        return ConfidenceInterval(nan, nan, nan, nan, nan, 0)
+    mean = valid.mean().item()
+    std = valid.std(unbiased=True).item() if n > 1 else 0.0
+    se = std / (n**0.5)
+    return ConfidenceInterval(mean=mean, std=std, se=se, ci95_low=mean - 1.96 * se, ci95_high=mean + 1.96 * se, n=n)
+
+
+def summarize_with_ci(
+    metrics: DayMetrics, cfg: Config, t_start: float | None = None, t_end: float | None = None
+) -> dict[str, ConfidenceInterval]:
+    """Treat each of the `cfg.n_days` simulated days as an independent
+    replicate and report a 95% confidence interval for each metric across
+    days — the statistical-confidence counterpart to `summarize`'s single
+    pooled point estimate. A day contributes no data point to a metric where
+    its own window total is zero (e.g. zero boardings), rather than a
+    misleading 0 or a division error.
+    """
+    idx = [
+        i for i, t in enumerate(metrics.time_hours)
+        if (t_start is None or t >= t_start) and (t_end is None or t < t_end)
+    ]
+    if not idx:
+        empty = ConfidenceInterval(*(float("nan"),) * 5, 0)
+        return {"wait": empty, "travel": empty, "utilisation": empty, "throughput": empty}
+
+    boarded = torch.stack([metrics.boarded[i] for i in idx]).sum(dim=0)
+    queue_person_minutes = torch.stack([metrics.queue_person_minutes[i] for i in idx]).sum(dim=0)
+    trips = torch.stack([metrics.trips_completed[i] for i in idx]).sum(dim=0)
+    travel_minutes = torch.stack([metrics.travel_minutes[i] for i in idx]).sum(dim=0)
+    departures = torch.stack([metrics.departures[i] for i in idx]).sum(dim=0)
+    load_sum = torch.stack([metrics.load_at_departure_sum[i] for i in idx]).sum(dim=0)
+
+    nan = torch.full_like(boarded, float("nan"))
+    per_day_wait = torch.where(boarded > 0, queue_person_minutes / boarded.clamp(min=1e-9), nan)
+    per_day_travel = torch.where(trips > 0, travel_minutes / trips.clamp(min=1e-9), nan)
+    per_day_util = torch.where(departures > 0, load_sum / departures.clamp(min=1e-9), nan)
+
+    return {
+        "wait": _confidence_interval(per_day_wait),
+        "travel": _confidence_interval(per_day_travel),
+        "utilisation": _confidence_interval(per_day_util),
+        "throughput": _confidence_interval(trips),
+    }

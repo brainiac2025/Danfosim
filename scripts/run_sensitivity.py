@@ -19,7 +19,7 @@ import torch
 
 from danfosim.config import Config
 from danfosim.network import generate_network
-from danfosim.sim import run_day, summarize
+from danfosim.sim import run_day, summarize, summarize_with_ci
 
 
 def sweep_threshold(cfg: Config, net, device, thresholds, max_waits) -> list[dict]:
@@ -29,12 +29,18 @@ def sweep_threshold(cfg: Config, net, device, thresholds, max_waits) -> list[dic
             run_cfg = replace(cfg, departure_threshold=threshold, max_wait_before_departure_anyway=max_wait)
             _, metrics = run_day(run_cfg, net, "informal", device)
             summary = summarize(metrics, run_cfg)
-            row = {"departure_threshold": threshold, "max_wait_before_departure_anyway": max_wait, **asdict(summary)}
+            wait_ci = summarize_with_ci(metrics, run_cfg)["wait"]
+            row = {
+                "departure_threshold": threshold,
+                "max_wait_before_departure_anyway": max_wait,
+                **asdict(summary),
+                "wait_time_ci95": [wait_ci.ci95_low, wait_ci.ci95_high],
+            }
             results.append(row)
             print(
                 f"  threshold={threshold:.2f}  max_wait={max_wait:5.1f}min  "
-                f"wait={summary.mean_wait_time_minutes:7.2f}min  util={summary.mean_utilisation:5.2f}  "
-                f"trips={summary.throughput_trips:7.0f}"
+                f"wait={summary.mean_wait_time_minutes:7.2f}min [{wait_ci.ci95_low:6.2f},{wait_ci.ci95_high:6.2f}]  "
+                f"util={summary.mean_utilisation:5.2f}  trips={summary.throughput_trips:7.0f}"
             )
     return results
 
@@ -44,16 +50,22 @@ def sweep_congestion(cfg: Config, net, device, multipliers) -> list[dict]:
     for factor in multipliers:
         scaled_net = net.scale_congestion(factor)
         row = {"congestion_multiplier": factor}
+        wait_cis = {}
         for regime in ("informal", "formal"):
             _, metrics = run_day(cfg, scaled_net, regime, device)
             summary = summarize(metrics, cfg)
-            row[regime] = asdict(summary)
+            wait_ci = summarize_with_ci(metrics, cfg)["wait"]
+            row[regime] = {**asdict(summary), "wait_time_ci95": [wait_ci.ci95_low, wait_ci.ci95_high]}
+            wait_cis[regime] = wait_ci
         advantage = row["formal"]["mean_wait_time_minutes"] - row["informal"]["mean_wait_time_minutes"]
         row["informal_wait_advantage_minutes"] = advantage
+        # CIs don't overlap => the advantage is significant at the 95% level
+        row["advantage_significant"] = wait_cis["informal"].ci95_high < wait_cis["formal"].ci95_low
         results.append(row)
+        sig = "significant" if row["advantage_significant"] else "NOT significant"
         print(
             f"  congestion x{factor:.2f}  informal wait={row['informal']['mean_wait_time_minutes']:7.2f}min  "
-            f"formal wait={row['formal']['mean_wait_time_minutes']:7.2f}min  advantage={advantage:+7.2f}min"
+            f"formal wait={row['formal']['mean_wait_time_minutes']:7.2f}min  advantage={advantage:+7.2f}min ({sig})"
         )
     return results
 
