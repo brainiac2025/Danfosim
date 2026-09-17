@@ -36,12 +36,15 @@ which numbers are cited-pattern vs. assumption.
 ```bash
 python -m venv .venv
 source .venv/Scripts/activate  # or .venv/bin/activate on Linux/Mac
-pip install -e ".[dev]"
+pip install -r requirements-lock.txt
+pip install -e . --no-deps
 ```
 
-Requires Python 3.11+. Uses PyTorch for batched, GPU-vectorised simulation —
-install a CUDA build for the full `n_days`-batched runs on GPU hardware; a
-CPU build works fine for development and testing.
+Requires Python 3.11+. `requirements-lock.txt` pins the exact versions this
+project was developed and tested against (CPU-only PyTorch). On the target
+GPU hardware, install a matching CUDA build of `torch` instead before
+running the lock file, or just `pip install -e ".[dev]"` for unpinned
+latest-compatible versions.
 
 ## Run the tests
 
