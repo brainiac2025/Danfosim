@@ -20,6 +20,8 @@ python scripts/run_comparison.py --n-days 200
 python scripts/plot_results.py
 ```
 
+Full write-up with results and discussion: [`docs/REPORT.md`](docs/REPORT.md).
+
 ## Why this is hard to get right elsewhere
 
 There is no substantial existing benchmark of informal-vs-formal transit
