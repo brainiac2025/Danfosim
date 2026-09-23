@@ -1,9 +1,15 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Danfo Traffic</title>
 <meta name="description" content="A simulated day on Lagos's transit network — informal danfo minibuses against a fixed-route formal baseline, side by side.">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <style>
   :root {
+    color-scheme: light dark;
     --ink: #201c16;
     --ink-soft: #5a5245;
     --paper: #f6f1e4;
@@ -52,6 +58,7 @@
   }
 
   * { box-sizing: border-box; }
+  html, body { margin: 0; }
   body {
     background: var(--paper);
     color: var(--ink);
@@ -189,7 +196,8 @@
   .foot { font-size: 12px; color: var(--ink-soft); text-align: center; margin-top: 4px; }
   .foot a { color: inherit; }
 </style>
-
+</head>
+<body>
 <div class="wrap">
   <div>
     <p class="kicker">DanfoSim &middot; one simulated day, real output</p>
@@ -241,7 +249,7 @@
     <span class="swatch"><span style="width:14px;height:3px;background:var(--bottleneck);display:inline-block;border-radius:2px"></span> bottleneck edge <b>(bridge / CBD-adjacent)</b></span>
   </div>
 
-  <p class="foot">Network: 6 corridors &middot; 40 vehicles per regime &middot; data from <code>scripts/export_trace.py</code>, sampled every 3 simulated minutes. See <a href="../REPORT.md">the full write-up</a> for the statistics behind these two regimes.</p>
+  <p class="foot">Network: 6 corridors &middot; 40 vehicles per regime &middot; data from <code>scripts/export_trace.py</code>, sampled every 3 simulated minutes. See <a href="REPORT.md">the full write-up</a> for the statistics behind these two regimes.</p>
 </div>
 
 <script>
@@ -434,14 +442,16 @@
   }
 
   Promise.all([
-    fetch("network.json").then(function (r) { return r.json(); }),
-    fetch("trace_informal.json").then(function (r) { return r.json(); }),
-    fetch("trace_formal.json").then(function (r) { return r.json(); }),
+    fetch("dashboard-data/network.json").then(function (r) { return r.json(); }),
+    fetch("dashboard-data/trace_informal.json").then(function (r) { return r.json(); }),
+    fetch("dashboard-data/trace_formal.json").then(function (r) { return r.json(); }),
   ]).then(function (results) {
     init(results[0], results[1], results[2]);
   }).catch(function (err) {
     document.querySelector(".wrap").innerHTML =
-      '<p style="color:var(--bottleneck)">Could not load simulation data: ' + err + '</p>';
+      '<p style="color:var(--bottleneck)">Could not load simulation data: ' + err + '. If you opened this file directly (file://), your browser is probably blocking local fetch() requests — serve this folder instead, e.g. <code>python -m http.server</code> from inside docs/, then open http://localhost:8000/dashboard.html</p>';
   });
 })();
 </script>
+</body>
+</html>
