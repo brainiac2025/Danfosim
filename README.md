@@ -9,7 +9,11 @@ python scripts/run_comparison.py --n-days 200
 python scripts/plot_results.py
 ```
 
-The full write-up is in [`docs/REPORT.md`](docs/REPORT.md). There's also an interactive page where you can watch a simulated day actually play out, vehicles moving, queues building at stops, both regimes side by side. It's [`docs/dashboard.html`](docs/dashboard.html), and because it fetches its own data files it needs to be served rather than double-clicked:
+The full write-up is in [`docs/REPORT.md`](docs/REPORT.md). There's also an interactive page where you can watch a simulated day actually play out, vehicles moving, queues building at stops, both regimes side by side:
+
+![A simulated day: informal vehicles and queues on the left, the fixed-route baseline on the right](docs/figures/dashboard.gif)
+
+That's a GIF preview since it won't move on its own on GitHub. The real thing is [`docs/dashboard.html`](docs/dashboard.html), scrubbable and with live stats, but because it fetches its own data files it needs to be served rather than double-clicked:
 
 ```bash
 cd docs && python -m http.server

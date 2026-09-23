@@ -1,111 +1,37 @@
 # Calibration
 
-This document grounds every behavioural rule in DanfoSim in either a cited
-source describing how Lagos's informal transit system operates, or flags it
-explicitly as a reasonable modelling assumption where no such source exists.
-Per the architecture's honesty principle (§0): **there is no substantial
-existing benchmark of informal-vs-formal transit simulated head-to-head on
-the same network**, so this project's calibration is more exposed to
-challenge than a project with a mature reference model to compare against.
-Read every "documented pattern" claim below as "the qualitative direction is
-well attested"; read every numeric parameter value as a starting point for
-the sensitivity sweeps in §9b, not a validated point estimate.
+Every behavioral rule in this project is either backed by something documented about how Lagos's informal transit actually works, or flagged plainly as a guess I made because it produced sane output. I'm writing this down mostly so I don't forget later which numbers I can defend and which ones I just picked.
+
+The honest starting point: there's no real head-to-head benchmark of informal versus formal transit out there, which is exactly what makes this project worth doing, but it also means I have very little to calibrate against. So read every "documented pattern" claim below as "the general direction is well attested," and read every actual number as a starting point for the sensitivity sweeps rather than something I'd stake a claim on.
 
 ## Documented patterns (reasonably confident)
 
-| Rule | Where it's modelled | Basis |
+| Rule | Where it's modeled | Why I believe it |
 |---|---|---|
-| Radial corridor structure: a handful of dominant arterial routes into/out of Island and Mainland business districts | `network.py`: K corridors sharing one CBD hub node | Widely documented feature of Lagos's road network and transit geography — travel is structured around a small number of bridges/expressways connecting the mainland to Lagos Island, not a dense uniform grid. |
-| Chronic bottlenecks at bridges / CBD-adjacent segments | `network.py`: the edges closest to the CBD hub in each corridor are flagged `is_bottleneck` with a steeper BPR congestion curve (`congestion_sensitivity`, `capacity`) | Well-documented: the mainland–island bridges (e.g. Third Mainland Bridge corridor) are Lagos's most consistently cited chokepoints. |
-| Bimodal commute demand: morning peak inbound to CBD, evening peak outbound | `demand.py`: `arrival_rate` peaks inbound stops at `morning_peak_hour`, outbound (CBD) stops at `evening_peak_hour` | The single most robust, well-documented fact about Lagos commute patterns — this is the one demand-side calibration point the architecture explicitly flags as worth high confidence. |
-| No fixed schedule; a danfo/keke departs when sufficiently full | `vehicle.py`: `departure_threshold` fraction-of-capacity rule | Widely and consistently reported as *the* defining operational difference between Lagos's informal minibus/tricycle system and scheduled transit. |
-| Soft, elastic capacity — a danfo can exceed its nominal seat count under pressure | `vehicle.py`: `soft_capacity_overload` allows boarding above `nominal_capacity` | Commonly reported (extra standing/seated passengers beyond nominal capacity), though the specific multiplier (1.2×) is this project's assumption, not a measured figure. |
-| Informal, uncentralised fare/route flexibility, including mid-route deviation toward higher demand and "dropping" passengers short of the nominal terminus | `vehicle.py`: `deviation_prob`-gated DROP mechanic | The qualitative behaviour (drivers route-flex toward revenue-maximising demand, short-turn routes) is a commonly described feature of Lagos danfo operation; the specific 15% per-arrival probability is **an assumption**, not a cited rate — swept in §9b. |
-| Formal transit (BRT-style) uses fixed routes, fixed headway, and hard capacity limits | `formal_baseline.py` | Standard, well-documented operating model for scheduled fixed-route transit generally (not Lagos-specific) — used here purely as the comparison baseline, not as a claim about any specific existing Lagos BRT line's exact parameters. |
+| Radial corridor structure: a handful of dominant arterial routes into and out of Island and Mainland business districts | `network.py`: K corridors sharing one CBD hub node | Well-documented feature of Lagos's road network: travel is structured around a handful of bridges and expressways connecting the mainland to Lagos Island, not a dense uniform grid. |
+| Chronic bottlenecks at bridges and CBD-adjacent segments | `network.py`: edges closest to the CBD hub are flagged `is_bottleneck` with a steeper BPR congestion curve (`congestion_sensitivity`, `capacity`) | The mainland-island bridges, Third Mainland Bridge especially, are Lagos's most consistently cited chokepoints. |
+| Bimodal commute demand: morning peak inbound to CBD, evening peak outbound | `demand.py`: `arrival_rate` peaks inbound stops at `morning_peak_hour`, outbound stops at `evening_peak_hour` | Probably the single most robust fact about Lagos commute patterns, and the one demand-side number I feel genuinely confident about. |
+| No fixed schedule; a danfo or keke departs when it's full enough | `vehicle.py`: `departure_threshold` fraction-of-capacity rule | Consistently reported as the defining operational difference between danfo/keke and scheduled transit. |
+| Soft, elastic capacity, a danfo can exceed its nominal seat count under pressure | `vehicle.py`: `soft_capacity_overload` allows boarding above `nominal_capacity` | Commonly reported that danfos carry extra standing or seated passengers beyond nominal capacity. The actual multiplier (1.2x here) is my guess, not a measured number. |
+| Informal, uncentralised fare and route flexibility: mid-route deviation toward higher demand, "dropping" passengers short of the nominal terminus | `vehicle.py`: `deviation_prob`-gated drop mechanic | Drivers route-flexing toward better demand and short-turning routes is commonly described as how danfo operation actually works. The 15% per-arrival probability itself is my number, not a cited rate, and it gets swept in the sensitivity experiments. |
+| Formal transit (BRT-style) uses fixed routes, fixed headway, hard capacity | `formal_baseline.py` | Just the standard operating model for scheduled fixed-route transit generally, not a Lagos-specific claim. It's the comparison baseline, not a model of any particular existing BRT line. |
 
-## Assumptions flagged explicitly (no strong citation; reasonable but not validated)
+## Assumptions I can't fully back up
 
-- **`nominal_capacity = 14`** — typical of a Lagos danfo minibus's nominal
-  seating; treated as a round-number assumption, not a measured fleet
-  average. Real vehicles vary (keke napep tricycles seat far fewer).
-- **`base_arrival_rate = 0.35` passengers/minute at an average off-peak
-  stop** and the overall demand magnitude — chosen (via a manual sweep, see
-  `docs/CALIBRATION.md` git history / project memory) to produce single-digit
-  to ~30-minute wait times under peak load, a plausible order of magnitude
-  for informal minibus/tricycle waits, rather than derived from a ridership
-  count. Earlier, higher settings (0.8) produced 100+ minute mean waits under
-  peak — clearly implausible — which is itself informative: the model is
-  sensitive to this assumption, so §9b's sensitivity sweeps matter more than
-  any single point estimate. The project leans on the *comparison* (§9a:
-  informal vs. formal under identical demand) being robust to this
-  uncertainty, not on the absolute wait-time numbers.
-- **`peak_multiplier = 3.0`, `peak_width_hours = 1.2`** — the peak-to-off-peak
-  demand ratio and peak sharpness are assumed; the *existence* of AM/PM peaks
-  is well documented, their exact magnitude is not calibrated against a
-  ridership survey.
-- **`departure_threshold = 0.75`, `max_wait_before_departure_anyway = 8 min`**
-  — plausible values for a load-threshold departure rule; swept across a
-  range in §9b rather than treated as fixed truths.
-- **`deviation_prob = 0.15`** — see above; swept in §9b.
-- **Ambient (background, non-transit) road traffic** (`network.py`:
-  `Network.ambient_density`) adds a time-varying background vehicle-density
-  term to every edge's congestion calculation, higher at bottleneck edges and
-  higher at rush hour. This was added after discovering that the simulated
-  transit fleet alone (tens of vehicles across dozens of edges) is far too
-  sparse to ever load a bridge/CBD-adjacent edge up to a level where the BPR
-  congestion term activates — a real limitation of any model that only
-  represents transit vehicles explicitly, since actual Lagos bridge
-  congestion comes overwhelmingly from general (car/truck) traffic, not
-  danfo/keke density. `ambient_traffic_base`, `_bottleneck_multiplier`, and
-  `_peak_multiplier` (§11 Config) are assumptions tuned by hand to produce a
-  congestion response that is clearly present and clearly rush-hour-linked
-  without degenerating into gridlock at the default congestion multiplier —
-  not measured background-traffic volumes. The §9b.2 congestion-severity
-  sweep (`scripts/run_sensitivity.py congestion`) scales this same term.
-- **Distance-from-CBD demand gradient** (`demand.py`: outer stops scale
-  `0.5 + 0.5 * hops/(J-1)` relative to CBD-adjacent stops) — a monotonic
-  "more suburban population commutes in" assumption, not derived from a
-  population density map.
-- **Fixed travel time per edge, set once at trip/leg departure from that
-  edge's congestion level at that instant** (not recomputed continuously
-  while the vehicle is mid-edge) — a standard discrete-time simplification
-  of BPR-style congestion models, not a claim that real travel time is
-  static once a trip begins.
-- **A "dropped" passenger's trip is counted as completed** when an informal
-  vehicle short-turns (§ vehicle.py DROP mechanic) — a simplification. In
-  reality a dropped passenger may need a second vehicle to finish their
-  journey (an informal transfer), which this model does not represent; this
-  likely *overstates* informal throughput and *understates* informal
-  effective travel time relative to a model that tracked transfers.
-- **Formal fixed-route buses dwell briefly (`dwell_minutes = 0.5`) at every
-  intermediate junction to board passengers, while informal vehicles perform
-  a zero-dwell rolling curbside pickup at junctions they pass without
-  deviating** — both are modelling necessities (without *some* intermediate
-  boarding mechanism, demand at non-terminus stops would never be served),
-  not measured dwell times. The asymmetry (formal pays a dwell-time cost,
-  informal doesn't) is a deliberate, defensible reflection of danfo/keke's
-  documented curbside/hand-signal boarding flexibility versus a scheduled
-  bus's designated-stop model — but it is a modelling choice that favours
-  informal's throughput, and should be read as such when interpreting §9a.
-- **Formal headway-governed departure applies only at each route's terminus**
-  (where a bus starts a fresh leg after reversing direction); intermediate
-  stops use a fixed, load-independent dwell instead of the headway. This is
-  the standard interpretation of "fixed headway" (a published departure
-  frequency from the terminus) rather than a claim that intermediate
-  boarding times are precisely 0.5 minutes.
-- **Equal fleet size across regimes (§9a, §7)** is a deliberate experimental
-  control (per the architecture: giving one regime more vehicles would
-  trivially favour it), not a claim that Lagos's actual informal and formal
-  fleets are equally sized.
-- **CPU-only PyTorch was used for development** on this machine; the target
-  hardware (Legion 7 Pro, 16GB GPU) should use a CUDA build for the full
-  `n_days`-batched runs described in §9a/§9b — this affects wall-clock time,
-  not simulation semantics.
+- **`nominal_capacity = 14`**: a round number for a typical danfo's seating, not a measured fleet average. Real vehicles vary a lot, and keke tricycles seat far fewer.
+- **`base_arrival_rate = 0.35` passengers per minute at an average off-peak stop**: I got here by sweeping the value manually until wait times looked like something a real person would describe, single digits up to around 30 minutes at peak, instead of deriving it from an actual ridership count. My first attempt used 0.8 and produced 100+ minute average waits at peak, which was obviously wrong, and that's useful in its own way: it tells me the model is genuinely sensitive to this number, which is why the sensitivity sweeps matter more here than any single point estimate. I'm leaning on the comparison between regimes (informal vs. formal under identical demand) being robust to this uncertainty, not on the absolute wait-time numbers themselves.
+- **`peak_multiplier = 3.0`, `peak_width_hours = 1.2`**: the ratio between peak and off-peak demand, and how sharp the peak is, are both guesses. The AM/PM peaks themselves are well documented, their exact size isn't, and I don't have a ridership survey to check against.
+- **`departure_threshold = 0.75`, `max_wait_before_departure_anyway = 8 min`**: reasonable-sounding values for a load-threshold rule, swept across a range rather than treated as settled.
+- **`deviation_prob = 0.15`**: same story as above, and it's swept in the same experiments.
+- **Background road traffic** (`network.py`, `Network.ambient_density`): adds a time-varying, non-transit traffic term to every edge's congestion calculation, heavier at bottleneck edges and at rush hour. I added this after realizing the simulated fleet on its own, a few dozen vehicles spread across a few dozen road segments, is nowhere near dense enough to ever load a bridge edge up to a point where congestion actually kicks in. That's a real limitation of any model that only represents transit vehicles explicitly, since actual Lagos bridge congestion comes mostly from general traffic, not danfo density. The multipliers here (`ambient_traffic_base`, `_bottleneck_multiplier`, `_peak_multiplier` in Config) are hand-tuned to give a congestion response that's clearly present and clearly tied to rush hour without collapsing into total gridlock at the default setting. Not measured traffic volumes, just tuned until it looked right. The congestion sensitivity sweep scales this same term.
+- **Distance-from-CBD demand gradient** (`demand.py`: outer stops scale by `0.5 + 0.5 * hops/(J-1)` relative to CBD-adjacent ones): a monotonic "more suburban population commutes in" assumption, not pulled from an actual population density map.
+- **Travel time is fixed once a leg starts**, set from that edge's congestion level at the moment of departure rather than recomputed continuously while the vehicle is mid-edge. Standard simplification of BPR-style congestion models, not a claim that real travel time freezes the instant a trip begins.
+- **A dropped passenger counts as a completed trip.** When an informal vehicle short-turns, the model doesn't track that the passenger might now need a second vehicle to actually finish their journey. That's a real simplification, and it almost certainly overstates informal throughput and understates informal travel time next to a model that handled transfers properly.
+- **Formal buses dwell briefly (`dwell_minutes = 0.5`) at every intermediate junction; informal vehicles get a zero-dwell rolling pickup** at junctions they pass without deviating. Neither number is measured. Some intermediate boarding mechanism has to exist or demand at non-terminus stops would never get served, but the asymmetry itself, formal pays a time cost and informal doesn't, is a deliberate choice reflecting how curbside hailing actually works. It also happens to favor informal's throughput, and I'd rather that be written down here than found by someone else later.
+- **Formal headway governs departure only at the terminus**, where a bus starts a fresh leg after reversing direction. Intermediate stops use a fixed, load-independent dwell instead. That's the standard reading of "fixed headway," a published departure frequency from the terminus, not a claim that intermediate boarding genuinely takes exactly 0.5 minutes.
+- **Equal fleet size across regimes** is a deliberate control, not a claim that Lagos's actual informal and formal fleets are the same size. Giving one regime more vehicles would trivially favor it.
+- **I developed and tested this on CPU-only PyTorch.** On the actual target hardware (a Legion 7 Pro with a 16GB GPU), a CUDA build would make the full batched runs faster, but it wouldn't change what the simulation computes.
 
-## How to challenge or improve this calibration
+## If you want to argue with any of this
 
-Every assumption above is a named `Config` field (see `danfosim/config.py`)
-and every one used in §9b's sensitivity sweeps should be read as "here is how
-much the headline result depends on this specific unvalidated number" —
-that dependence, not the point estimate itself, is the honest deliverable
-when no ground-truth Lagos trip-level dataset is available.
+Every assumption above maps to a named field in `danfosim/config.py`, and the ones I actually swept should be read less as "here's the right number" and more as "here's how much the headline result moves if this number is wrong." That sensitivity, not any single point estimate, is what I can actually stand behind without a real Lagos trip dataset to check against.
