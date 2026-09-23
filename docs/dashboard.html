@@ -1,0 +1,447 @@
+<title>Danfo Traffic</title>
+<meta name="description" content="A simulated day on Lagos's transit network — informal danfo minibuses against a fixed-route formal baseline, side by side.">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #201c16;
+    --ink-soft: #5a5245;
+    --paper: #f6f1e4;
+    --panel: #fffcf5;
+    --road: #c3b8a1;
+    --bottleneck: #c4401f;
+    --danfo: #e8ac00;
+    --danfo-deep: #9c6f00;
+    --brt: #1c5d99;
+    --brt-deep: #123f68;
+    --queue: #c4401f;
+    --line: #e2d8c3;
+    --shadow: 0 1px 2px rgba(32,28,22,.06), 0 6px 20px rgba(32,28,22,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #f2ece0;
+      --ink-soft: #b9b0a0;
+      --paper: #17140f;
+      --panel: #211d16;
+      --road: #4a4436;
+      --bottleneck: #ef6a44;
+      --danfo: #f2c23a;
+      --danfo-deep: #f6d876;
+      --brt: #5b9bdc;
+      --brt-deep: #8fbdea;
+      --queue: #ef6a44;
+      --line: #332e23;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 24px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #f2ece0;
+    --ink-soft: #b9b0a0;
+    --paper: #17140f;
+    --panel: #211d16;
+    --road: #4a4436;
+    --bottleneck: #ef6a44;
+    --danfo: #f2c23a;
+    --danfo-deep: #f6d876;
+    --brt: #5b9bdc;
+    --brt-deep: #8fbdea;
+    --queue: #ef6a44;
+    --line: #332e23;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 24px rgba(0,0,0,.35);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Inter', system-ui, sans-serif;
+    padding-inline: 16px;
+    padding-block: 20px 48px;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+
+  h1 {
+    font-family: 'Barlow Condensed', system-ui, sans-serif;
+    font-weight: 700;
+    font-size: clamp(28px, 5vw, 42px);
+    letter-spacing: 0.2px;
+    text-wrap: balance;
+    margin: 0;
+    line-height: 1.02;
+  }
+  .kicker {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-weight: 600;
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    margin: 0 0 6px;
+  }
+  .lede { color: var(--ink-soft); font-size: 14.5px; max-width: 62ch; line-height: 1.5; margin: 8px 0 0; }
+
+  .transport {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    padding: 14px 18px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 14px;
+  }
+  .playbtn {
+    width: 40px; height: 40px; border-radius: 999px; border: none;
+    background: var(--ink); color: var(--paper);
+    font-size: 15px; cursor: pointer; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    transition: transform .12s ease;
+  }
+  .playbtn:hover { transform: scale(1.06); }
+  .playbtn:active { transform: scale(0.96); }
+
+  .scrub-col { flex: 1 1 260px; min-width: 200px; display: flex; flex-direction: column; gap: 4px; }
+  .scrub-row { position: relative; }
+  input[type=range] {
+    width: 100%; appearance: none; height: 6px; border-radius: 999px;
+    background: var(--road); outline: none; cursor: pointer; margin: 0;
+    position: relative; z-index: 2;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    appearance: none; width: 16px; height: 16px; border-radius: 999px;
+    background: var(--ink); border: 2px solid var(--panel); cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0,0,0,.3);
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 16px; height: 16px; border-radius: 999px;
+    background: var(--ink); border: 2px solid var(--panel); cursor: pointer;
+  }
+  .peak-shade {
+    position: absolute; top: 0; height: 6px; border-radius: 999px;
+    background: color-mix(in srgb, var(--bottleneck) 30%, transparent);
+    pointer-events: none; z-index: 1;
+  }
+  .scrub-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink-soft); font-family: 'IBM Plex Mono', monospace; }
+
+  .clock {
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 600;
+    font-size: 22px;
+    font-variant-numeric: tabular-nums;
+    min-width: 78px;
+    text-align: right;
+  }
+  .speedgroup { display: flex; gap: 4px; flex: none; }
+  .speedbtn {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px; font-weight: 600;
+    border: 1px solid var(--line); background: transparent; color: var(--ink-soft);
+    border-radius: 7px; padding: 6px 9px; cursor: pointer;
+  }
+  .speedbtn[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .panel-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding: 14px 18px 10px;
+  }
+  .panel-title { font-family: 'Barlow Condensed', system-ui, sans-serif; font-weight: 700; font-size: 22px; }
+  .panel[data-regime="informal"] .panel-title { color: var(--danfo-deep); }
+  .panel[data-regime="formal"] .panel-title { color: var(--brt-deep); }
+  .panel-sub { font-size: 11.5px; color: var(--ink-soft); }
+
+  .stage { position: relative; aspect-ratio: 1 / 1; width: 100%; }
+  .stage svg { width: 100%; height: 100%; display: block; }
+
+  .stats {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
+    background: var(--line); border-top: 1px solid var(--line);
+  }
+  .stat { background: var(--panel); padding: 10px 8px; text-align: center; }
+  .stat b {
+    display: block; font-family: 'IBM Plex Mono', monospace; font-size: 18px;
+    font-variant-numeric: tabular-nums; font-weight: 600;
+  }
+  .stat span { font-size: 10px; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-soft); }
+
+  .legend {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    box-shadow: var(--shadow); padding: 12px 18px;
+    display: flex; flex-wrap: wrap; gap: 18px; font-size: 12.5px; color: var(--ink-soft);
+    align-items: center;
+  }
+  .legend b { color: var(--ink); font-weight: 600; }
+  .swatch { display: inline-flex; align-items: center; gap: 6px; }
+  .dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block; }
+  .foot { font-size: 12px; color: var(--ink-soft); text-align: center; margin-top: 4px; }
+  .foot a { color: inherit; }
+</style>
+
+<div class="wrap">
+  <div>
+    <p class="kicker">DanfoSim &middot; one simulated day, real output</p>
+    <h1>Same roads, same passengers, two ways to run a bus.</h1>
+    <p class="lede">Every dot below is an actual vehicle from the simulation, not an illustration. Left panel: danfos leaving when they're full. Right panel: a fixed-route bus on a fixed headway. Same network, same demand, watched minute by minute across a 05:00&ndash;21:00 day.</p>
+  </div>
+
+  <div class="transport">
+    <button class="playbtn" id="playBtn" aria-label="Play">&#9654;</button>
+    <div class="scrub-col">
+      <div class="scrub-row">
+        <div class="peak-shade" id="amShade"></div>
+        <div class="peak-shade" id="pmShade"></div>
+        <input type="range" id="scrub" min="0" max="1000" value="0" step="1">
+      </div>
+      <div class="scrub-labels"><span>05:00</span><span id="peakLabel">morning &amp; evening peak shaded</span><span>21:00</span></div>
+    </div>
+    <div class="clock" id="clock">05:00</div>
+    <div class="speedgroup" id="speedGroup">
+      <button class="speedbtn" data-speed="1">1&times;</button>
+      <button class="speedbtn" data-speed="4" aria-pressed="true">4&times;</button>
+      <button class="speedbtn" data-speed="12">12&times;</button>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="panel" data-regime="informal">
+      <div class="panel-head">
+        <span class="panel-title">Informal &mdash; danfo/keke</span>
+        <span class="panel-sub">threshold departure &middot; route deviation</span>
+      </div>
+      <div class="stage"><svg id="svg-informal" viewBox="-480 -480 960 960"></svg></div>
+      <div class="stats" id="stats-informal"></div>
+    </div>
+    <div class="panel" data-regime="formal">
+      <div class="panel-head">
+        <span class="panel-title">Formal &mdash; fixed route</span>
+        <span class="panel-sub">fixed headway &middot; hard capacity</span>
+      </div>
+      <div class="stage"><svg id="svg-formal" viewBox="-480 -480 960 960"></svg></div>
+      <div class="stats" id="stats-formal"></div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span class="swatch"><span class="dot" style="background:var(--danfo)"></span> vehicle en route</span>
+    <span class="swatch"><span class="dot" style="background:var(--danfo); opacity:.35"></span> vehicle waiting</span>
+    <span class="swatch"><span class="dot" style="background:var(--queue)"></span> passengers queued <b>(marker size = queue length)</b></span>
+    <span class="swatch"><span style="width:14px;height:3px;background:var(--bottleneck);display:inline-block;border-radius:2px"></span> bottleneck edge <b>(bridge / CBD-adjacent)</b></span>
+  </div>
+
+  <p class="foot">Network: 6 corridors &middot; 40 vehicles per regime &middot; data from <code>scripts/export_trace.py</code>, sampled every 3 simulated minutes. See <a href="../REPORT.md">the full write-up</a> for the statistics behind these two regimes.</p>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var REGIMES = ["informal", "formal"];
+  var state = { network: null, traces: {}, frameCount: 0, pos: 0, playing: false, speed: 4 };
+
+  function fmtClock(t) {
+    var h = Math.floor(t), m = Math.round((t - h) * 60);
+    if (m === 60) { m = 0; h += 1; }
+    return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0");
+  }
+
+  function buildStatic(net) {
+    REGIMES.forEach(function (regime) {
+      var svg = document.getElementById("svg-" + regime);
+      var color = regime === "informal" ? "var(--danfo)" : "var(--brt)";
+
+      var roadLayer = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      net.edges.forEach(function (e) {
+        var a = net.nodes[e.from], b = net.nodes[e.to];
+        var line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        line.setAttribute("x1", a[0]); line.setAttribute("y1", a[1]);
+        line.setAttribute("x2", b[0]); line.setAttribute("y2", b[1]);
+        line.style.stroke = e.bottleneck ? "var(--bottleneck)" : "var(--road)";
+        line.setAttribute("stroke-width", e.bottleneck ? 4 : 2.5);
+        line.setAttribute("stroke-linecap", "round");
+        line.setAttribute("opacity", e.bottleneck ? 0.85 : 0.9);
+        roadLayer.appendChild(line);
+      });
+      svg.appendChild(roadLayer);
+
+      var cbd = net.nodes[net.cbd_node];
+      var cbdDot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      cbdDot.setAttribute("cx", cbd[0]); cbdDot.setAttribute("cy", cbd[1]);
+      cbdDot.setAttribute("r", 15);
+      cbdDot.style.fill = "var(--ink)";
+      svg.appendChild(cbdDot);
+      var cbdLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      cbdLabel.setAttribute("x", cbd[0]); cbdLabel.setAttribute("y", cbd[1] + 4);
+      cbdLabel.setAttribute("text-anchor", "middle");
+      cbdLabel.setAttribute("font-size", "11");
+      cbdLabel.setAttribute("font-family", "IBM Plex Mono, monospace");
+      cbdLabel.setAttribute("font-weight", "600");
+      cbdLabel.style.fill = "var(--paper)";
+      cbdLabel.textContent = "CBD";
+      svg.appendChild(cbdLabel);
+
+      // Queue markers, one per demand stop, reused across frames
+      var queueLayer = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      queueLayer.setAttribute("id", "queue-" + regime);
+      net.stop_xy.forEach(function (xy) {
+        var c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        c.setAttribute("cx", xy[0]); c.setAttribute("cy", xy[1]);
+        c.setAttribute("r", 0);
+        c.style.fill = "var(--queue)";
+        c.setAttribute("opacity", "0.55");
+        queueLayer.appendChild(c);
+      });
+      svg.appendChild(queueLayer);
+
+      // Vehicle markers, one per fleet slot, reused across frames
+      var vehicleLayer = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      vehicleLayer.setAttribute("id", "vehicles-" + regime);
+      for (var i = 0; i < net.config.fleet_size; i++) {
+        var v = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        v.setAttribute("r", 6);
+        v.style.fill = color;
+        v.style.stroke = regime === "informal" ? "var(--danfo-deep)" : "var(--brt-deep)";
+        v.setAttribute("stroke-width", "1");
+        vehicleLayer.appendChild(v);
+      }
+      svg.appendChild(vehicleLayer);
+    });
+  }
+
+  function lerp(a, b, t) { return a + (b - a) * t; }
+
+  function renderFrame(pos) {
+    var i0 = Math.floor(pos);
+    var frac = pos - i0;
+    var i1 = Math.min(i0 + 1, state.frameCount - 1);
+
+    var f0ref = state.traces.informal.frames[i0];
+    var f1ref = state.traces.informal.frames[i1];
+    var t = lerp(f0ref.t, f1ref.t, frac);
+    document.getElementById("clock").textContent = fmtClock(t);
+    document.getElementById("scrub").value = Math.round(pos * 1000 / (state.frameCount - 1));
+
+    REGIMES.forEach(function (regime) {
+      var frames = state.traces[regime].frames;
+      var f0 = frames[i0], f1 = frames[i1];
+
+      var qLayer = document.getElementById("queue-" + regime);
+      for (var s = 0; s < f0.q.length; s++) {
+        var q = lerp(f0.q[s], f1.q[s], frac);
+        var r = Math.min(3 + q * 0.9, 22);
+        qLayer.children[s].setAttribute("r", q > 0.15 ? r : 0);
+      }
+
+      var vLayer = document.getElementById("vehicles-" + regime);
+      var maxCap = state.network.config.nominal_capacity;
+      for (var k = 0; k < f0.v.length; k++) {
+        var a = f0.v[k], b = f1.v[k];
+        var x = lerp(a[0], b[0], frac), y = lerp(a[1], b[1], frac);
+        var waiting = a[2] === 0;
+        var onboard = lerp(a[3], b[3], frac);
+        var el = vLayer.children[k];
+        el.setAttribute("cx", x); el.setAttribute("cy", y);
+        el.setAttribute("r", waiting ? 5 : Math.min(5 + (onboard / maxCap) * 6, 11));
+        el.setAttribute("opacity", waiting ? 0.4 : 1);
+      }
+
+      var trips = Math.round(lerp(f0.trips, f1.trips, frac));
+      var waitingN = f0.v.filter(function (v) { return v[2] === 0; }).length;
+      var enrouteN = f0.v.length - waitingN;
+      var totalQueue = f0.q.reduce(function (a, b) { return a + b; }, 0);
+      var statsEl = document.getElementById("stats-" + regime);
+      statsEl.innerHTML =
+        stat(waitingN, "waiting") +
+        stat(enrouteN, "en route") +
+        stat(Math.round(totalQueue), "queued") +
+        stat(trips, "trips so far");
+    });
+  }
+
+  function stat(value, label) {
+    return '<div class="stat"><b>' + value + '</b><span>' + label + '</span></div>';
+  }
+
+  var rafId = null, lastTime = null;
+  function tick(ts) {
+    if (!state.playing) return;
+    if (lastTime == null) lastTime = ts;
+    var dt = (ts - lastTime) / 1000;
+    lastTime = ts;
+    // one full day (frameCount frames) advances over ~40s at speed=1
+    var framesPerSecond = (state.frameCount / 40) * state.speed;
+    state.pos += dt * framesPerSecond;
+    if (state.pos >= state.frameCount - 1) { state.pos = state.frameCount - 1; setPlaying(false); }
+    renderFrame(state.pos);
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function setPlaying(playing) {
+    state.playing = playing;
+    document.getElementById("playBtn").innerHTML = playing ? "&#10074;&#10074;" : "&#9654;";
+    document.getElementById("playBtn").setAttribute("aria-label", playing ? "Pause" : "Play");
+    if (playing) { lastTime = null; rafId = requestAnimationFrame(tick); }
+    else if (rafId) { cancelAnimationFrame(rafId); }
+  }
+
+  function init(net, informal, formal) {
+    state.network = net;
+    state.traces = { informal: informal, formal: formal };
+    state.frameCount = informal.frames.length;
+
+    buildStatic(net);
+
+    var cfg = net.config;
+    var span = cfg.sim_hours;
+    function pct(hourFromStart) { return (hourFromStart / span) * 100; }
+    var amShade = document.getElementById("amShade");
+    var pmShade = document.getElementById("pmShade");
+    var amLo = pct(cfg.morning_peak_hour - cfg.day_start_hour - cfg.peak_width_hours);
+    var amHi = pct(cfg.morning_peak_hour - cfg.day_start_hour + cfg.peak_width_hours);
+    var pmLo = pct(cfg.evening_peak_hour - cfg.day_start_hour - cfg.peak_width_hours);
+    var pmHi = pct(cfg.evening_peak_hour - cfg.day_start_hour + cfg.peak_width_hours);
+    amShade.style.left = amLo + "%"; amShade.style.width = (amHi - amLo) + "%";
+    pmShade.style.left = pmLo + "%"; pmShade.style.width = (pmHi - pmLo) + "%";
+
+    renderFrame(0);
+
+    document.getElementById("playBtn").addEventListener("click", function () { setPlaying(!state.playing); });
+    document.getElementById("scrub").addEventListener("input", function (e) {
+      setPlaying(false);
+      state.pos = (parseInt(e.target.value, 10) / 1000) * (state.frameCount - 1);
+      renderFrame(state.pos);
+    });
+    document.getElementById("speedGroup").addEventListener("click", function (e) {
+      var btn = e.target.closest(".speedbtn");
+      if (!btn) return;
+      state.speed = parseFloat(btn.dataset.speed);
+      Array.prototype.forEach.call(document.querySelectorAll(".speedbtn"), function (b) {
+        b.setAttribute("aria-pressed", b === btn ? "true" : "false");
+      });
+    });
+  }
+
+  Promise.all([
+    fetch("network.json").then(function (r) { return r.json(); }),
+    fetch("trace_informal.json").then(function (r) { return r.json(); }),
+    fetch("trace_formal.json").then(function (r) { return r.json(); }),
+  ]).then(function (results) {
+    init(results[0], results[1], results[2]);
+  }).catch(function (err) {
+    document.querySelector(".wrap").innerHTML =
+      '<p style="color:var(--bottleneck)">Could not load simulation data: ' + err + '</p>';
+  });
+})();
+</script>
